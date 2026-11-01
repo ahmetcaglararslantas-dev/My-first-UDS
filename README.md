@@ -25,3 +25,32 @@ cargo test
 [ ] Linux socketcan / Virtual CAN (vcan0) integration
 
 [ ] ECU Simulation (Engine & Body ECUs)
+
+
+----------------------------------------------------------------------------
+🇹🇷 Türkçe
+Bellek güvenliği ve yüksek performans için Rust dilinde geliştirilmiş otomotiv ECU ağ simülasyonu ve UDS (Unified Diagnostic Services) diagnostik arayüz çekirdeği.
+
+🚀 Mevcut Özellikler
+UDS İstek Oluşturucu (Request Builder): Temel UDS servis ID'lerini destekleyen nesne yönelimli paket oluşturma modülü:
+
+0x10: Teşhis Oturum Kontrolü (Diagnostic Session Control)
+
+0x22: Tanımlayıcıya Göre Veri Okuma (Read Data By Identifier)
+
+0x19: DTC (Hata Kodu) Bilgisi Okuma
+
+0x14: Teşhis Bilgilerini Temizleme (Clear Diagnostic Information)
+
+Birim Testleri (Unit Testing): Güvenli çerçeve seri hale getirmeyi (serialization) garanti eden entegre test paketi.
+
+🗺️ Yol Haritası (Roadmap)
+[x] Temel UDS İstek Oluşturucu ve Birim Testleri
+
+[ ] ISO-TP Segmentasyon Katmanı (iso-dep)
+
+[ ] Linux socketcan / Sanal CAN (vcan0) entegrasyonu
+
+[ ] ECU Simülasyonu (Motor ve Gövde ECU'ları)
+
+
