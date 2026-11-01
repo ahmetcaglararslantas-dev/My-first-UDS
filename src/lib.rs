@@ -1,7 +1,4 @@
-/// PyCAN-Diag - UDS Diagnostic Request Builder & Simulator Module
-/// Author: Ahmet Çağlar Arslantaş
-
-#[derive(Debug, PartialEq,Clone,Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum UDSService {
     DiagnosticSessionControl = 0x10,
     ReadDataByIdentifier = 0x22,
@@ -10,9 +7,9 @@ pub enum UDSService {
 }
 
 pub struct UDSRequest {
-    service_id: UDSService,
-    sub_function: Option<u8>,
-    data: Vec<u8>,
+    pub service_id: UDSService,
+    pub sub_function: Option<u8>,
+    pub data: Vec<u8>,
 }
 
 impl UDSRequest {
@@ -47,16 +44,112 @@ impl UDSRequest {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum UDSResponse {
+    Positive {
+        service_id: UDSService,
+        data: Vec<u8>,
+    },
+    Negative {
+        service_id: UDSService,
+        nrc: u8,
+    },
+}
+
+impl UDSResponse {
+    pub fn parse(request_service: UDSService, raw_data: &[u8]) -> Result<Self, &'static str> {
+        if raw_data.is_empty() {
+            return Err("Boş yanıt alındı");
+        }
+
+        if raw_data[0] == 0x7F {
+            if raw_data.len() >= 3 {
+                return Ok(UDSResponse::Negative {
+                    service_id: request_service,
+                    nrc: raw_data[2],
+                });
+            }
+            return Err("Geçersiz negatif yanıt formatı");
+        }
+
+        let expected_positive_sid = (request_service as u8) | 0x40;
+        if raw_data[0] == expected_positive_sid {
+            return Ok(UDSResponse::Positive {
+                service_id: request_service,
+                data: raw_data[1..].to_vec(),
+            });
+        }
+
+        Err("Eşleşmeyen servis yanıt ID'si")
+    }
+}
+
+pub struct CanFrame {
+    pub id: u32,       // CAN ID (Örn: 0x7DF - Functional, 0x7E0 - Physical Request)
+    pub data: Vec<u8>, // En fazla 8 bayt olmalı
+}
+
+impl CanFrame {
+    // UDS payload'unu ISO-TP Single Frame kurallarına göre CAN frame'ine dönüştürür
+    pub fn from_uds_request(can_id: u32, request: &UDSRequest) -> Result<Self, &'static str> {
+        let uds_data = request.build_frame();
+        let payload_len = uds_data.len();
+
+        // ISO-TP Single Frame için veri boyutu en fazla 7 bayt olmalıdır (1 bayt PCI için)
+        if payload_len > 7 {
+            return Err("Mesaj çok uzun! ISO-TP Consecutive Frame (Çoklu çerçeve) gerekiyor.");
+        }
+
+        let mut frame_data = Vec::with_capacity(8);
+        // ISO-TP Single Frame PCI (Protocol Control Information): Üst nibble 0x0, alt nibble veri uzunluğu
+        frame_data.push(payload_len as u8);
+        frame_data.extend(uds_data);
+
+        // Kalan boşlukları 0x00 ile doldurabiliriz (Padding)
+        while frame_data.len() < 8 {
+            frame_data.push(0x00);
+        }
+
+        Ok(Self {
+            id: can_id,
+            data: frame_data,
+        })
+    }
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_uds_request_building() {
-        let req = UDSRequest::new(UDSService::ReadDataByIdentifier)
-                    .with_data(&[0xF1, 0x90]);
+  #[test]
+    fn test_isotp_single_frame_creation() {
+        let req = UDSRequest::new(UDSService::DiagnosticSessionControl)
+                    .with_sub_function(0x01); // 0x10 0x01
         
-        let frame = req.build_frame();
-        assert_eq!(frame, vec![0x22, 0xF1, 0x90]);
+        let can_frame = CanFrame::from_uds_request(0x7E0, &req).unwrap();
+        
+        assert_eq!(can_frame.id, 0x7E0);
+        // İlk bayt ISO-TP PCI (uzunluk = 2), sonra 0x10 ve 0x01, kalanı padding (0x00)
+        assert_eq!(can_frame.data[0], 0x02); 
+        assert_eq!(can_frame.data[1], 0x10);
+        assert_eq!(can_frame.data[2], 0x01);
+        assert_eq!(can_frame.data.len(), 8);
+    }
+
+    #[test]
+    fn test_uds_positive_response_parsing() {
+        let raw_response = vec![0x62, 0xAB, 0xCD];
+        let parsed = UDSResponse::parse(UDSService::ReadDataByIdentifier, &raw_response);
+
+        assert!(parsed.is_ok());
+        if let Ok(UDSResponse::Positive { service_id, data }) = parsed {
+            assert_eq!(service_id, UDSService::ReadDataByIdentifier);
+            assert_eq!(data, vec![0xAB, 0xCD]);
+        } else {
+            panic!("Pozitif yanıt bekleniyordu");
+        }
     }
 }
